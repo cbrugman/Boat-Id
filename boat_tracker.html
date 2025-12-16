@@ -795,19 +795,50 @@
         }
 
         // --- Swipe Gestures ---
-        let touchStartY = 0;
+        // --- Interaction Pause to prevent DOM thrashing ---
+        let isInteracting = false;
+        let interactionTimeout;
 
+        function setInteracting(active) {
+            isInteracting = active;
+            if (active) {
+                // Clear any pending clear
+                if (interactionTimeout) clearTimeout(interactionTimeout);
+            } else {
+                // Debounce clearing
+                interactionTimeout = setTimeout(() => {
+                    isInteracting = false;
+                    updateList(); // Catch up
+                }, 2000);
+            }
+        }
+
+        // Add click listener to header to toggle logic
+        let touchStartY = 0; // This variable is already there, keep it.
         document.addEventListener('DOMContentLoaded', () => {
             const header = document.querySelector('.header');
             if (header) {
                 header.addEventListener('click', toggleSheet);
             }
 
-            // Swipe Logic
+            // Swipe & Interaction Logic
             const sidebar = document.getElementById('sidebar');
             const listEl = document.getElementById('boat-list');
 
             if (sidebar) {
+                // Track interaction to pause updates
+                // We use 'touchstart' and 'mousedown' to detect start
+                // We use 'touchend' and 'mouseup' (and 'mouseleave') to detect end
+
+                ['touchstart', 'mousedown'].forEach(evt => {
+                    sidebar.addEventListener(evt, () => setInteracting(true), { passive: true });
+                });
+
+                ['touchend', 'mouseup', 'mouseleave'].forEach(evt => {
+                    sidebar.addEventListener(evt, () => setInteracting(false), { passive: true });
+                });
+
+                // Original Swipe Logic
                 sidebar.addEventListener('touchstart', (e) => {
                     touchStartY = e.touches[0].clientY;
                 }, { passive: true });
@@ -842,10 +873,14 @@
 
         let lastListUpdate = 0;
         function updateList(force = false) {
+            // Pause all updates if user is interacting (touching/scrolling)
+            if (isInteracting && !force) return;
+
             // Rate limit list DOM updates slightly, unless forced
             const now = Date.now();
             if (!force && now - lastListUpdate < 1000) return;
             lastListUpdate = now;
+
 
             const listEl = document.getElementById('boat-list');
             const shipKeys = Object.keys(vessels);
