@@ -284,54 +284,81 @@
                 socket.close();
             }
 
-            updateStatus(false, "Connecting to Local Proxy...");
+            updateStatus(false, "Connecting to Boat ID Server...");
 
-            // Connect to local python proxy to bypass CORS
-            try {
-                socket = new WebSocket("ws://localhost:8765");
-            } catch (e) {
-                updateStatus(false, "Proxy Error (Run Python Script!)", true);
-                return;
+            // Try Render first, then Localhost
+            const WS_URLS = [
+                "wss://boat-id.onrender.com",
+                "ws://localhost:8765"
+            ];
+
+            function tryConnect(index) {
+                if (index >= WS_URLS.length) {
+                    updateStatus(false, "Connection Failed - Is Server Running?", true);
+                    return;
+                }
+
+                const url = WS_URLS[index];
+                console.log("Trying connection to:", url);
+
+                try {
+                    socket = new WebSocket(url);
+                } catch (e) {
+                    tryConnect(index + 1);
+                    return;
+                }
+
+                socket.onopen = function (event) {
+                    console.log("Connected to:", url);
+                    updateStatus(true, "Connected -> Authenticating...");
+
+                    // Subscription message (API Key injected by Server now)
+                    const subscription = {
+                        BoundingBoxes: [[
+                            [BOUNDS.south, BOUNDS.west],
+                            [BOUNDS.north, BOUNDS.east]
+                        ]],
+                        FilterMessageTypes: ["PositionReport", "ShipStaticData"]
+                    };
+                    socket.send(JSON.stringify(subscription));
+                };
+
+                socket.onmessage = function (event) {
+                    // If we get data, we are good!
+                    if (document.getElementById('status-text').innerText.includes("Authenticating")) {
+                        updateStatus(true, "Live Streaming");
+                    }
+
+                    const message = JSON.parse(event.data);
+                    if (message.MessageType === "PositionReport") {
+                        handlePositionReport(message);
+                    } else if (message.MessageType === "ShipStaticData") {
+                        handleStaticData(message);
+                    }
+                };
+
+                socket.onclose = function (event) {
+                    console.log("Closed connection to:", url);
+                    // If this connection fails/closes, try the next one ONLY if we were never fully connected?
+                    // Or just let the user retry. For simplicity, if it closes immediately, we might want to try next.
+                    // But here, if onclose happens after a successful connection, it's just a disconnect.
+                    // If it happens immediately (before "Live Streaming"), it might be a failure.
+
+                    if (!document.getElementById('status-text').innerText.includes("Live Streaming")) {
+                        // Likely failed to connect or handshake
+                        tryConnect(index + 1);
+                    } else {
+                        updateStatus(false, "Disconnected", true);
+                    }
+                };
+
+                socket.onerror = function (error) {
+                    console.error("WebSocket Error on " + url, error);
+                    // onError usually precedes onClose, so let onClose handle the retry logic
+                };
             }
 
-            socket.onopen = function (event) {
-                updateStatus(true, "Proxy Connected -> Authenticating...");
-
-                // Subscription message (API Key injected by Server now)
-                const subscription = {
-                    BoundingBoxes: [[
-                        [BOUNDS.south, BOUNDS.west],
-                        [BOUNDS.north, BOUNDS.east]
-                    ]],
-                    FilterMessageTypes: ["PositionReport", "ShipStaticData"]
-                };
-                socket.send(JSON.stringify(subscription));
-            };
-
-            socket.onmessage = function (event) {
-                // If we get data, we are good!
-                if (document.getElementById('status-text').innerText.includes("Authenticating")) {
-                    updateStatus(true, "Live Streaming");
-                }
-
-                const message = JSON.parse(event.data);
-                if (message.MessageType === "PositionReport") {
-                    handlePositionReport(message);
-                } else if (message.MessageType === "ShipStaticData") {
-                    handleStaticData(message);
-                }
-            };
-
-            socket.onclose = function (event) {
-                // If it closes immediately, it's often because the python server isn't running
-                console.log("Close event:", event);
-                updateStatus(false, "Disconnected - Is Python Server Running?", true);
-            };
-
-            socket.onerror = function (error) {
-                console.error("WebSocket Error: ", error);
-                updateStatus(false, "Connection Error", true);
-            };
+            tryConnect(0);
         }
 
         // --- Demo Mode ---
