@@ -2,10 +2,11 @@ import asyncio
 import json
 import websockets
 import ssl
+import os
 
 # Configuration
 AIS_STREAM_URL = "wss://stream.aisstream.io/v0/stream"
-LOCAL_PORT = 8765
+LOCAL_PORT = int(os.environ.get("PORT", 8765))
 API_KEY = "a05f104a2962bf16a0552a5145bce80efb3766f0" # Moved from HTML
 
 print(f"--- Boat Tracker Proxy Server ---")
@@ -80,7 +81,7 @@ async def proxy_handler(client_ws):
         print(f"[Session] Ended")
 
 async def main():
-    async with websockets.serve(proxy_handler, "localhost", LOCAL_PORT):
+    async with websockets.serve(proxy_handler, "0.0.0.0", LOCAL_PORT):
         await asyncio.Future()  # Run forever
 
 if __name__ == "__main__":
