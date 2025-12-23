@@ -3,6 +3,7 @@ import json
 import websockets
 import ssl
 import os
+import http
 
 # Configuration
 AIS_STREAM_URL = "wss://stream.aisstream.io/v0/stream"
@@ -80,8 +81,30 @@ async def proxy_handler(client_ws):
     finally:
         print(f"[Session] Ended")
 
+async def process_request(server_protocol, path, request_headers):
+    """
+    Handle HTTP requests. Serve index.html on root.
+    Everything else upgrades to WebSocket.
+    """
+    if path == "/":
+        try:
+            with open("index.html", "rb") as f:
+                content = f.read()
+            return http.HTTPStatus.OK, [("Content-Type", "text/html")], content
+        except FileNotFoundError:
+            return http.HTTPStatus.NOT_FOUND, [], b"index.html not found"
+            
+    # For health checks (Fly.io checks / usually, but sometimes just TCP)
+    if path == "/health":
+         return http.HTTPStatus.OK, [], b"OK"
+         
+    # Return None to let websockets handle the connection (Upgrade)
+    return None
+
 async def main():
-    async with websockets.serve(proxy_handler, "0.0.0.0", LOCAL_PORT):
+    # Bind to 0.0.0.0 to listen on all interfaces (required for Docker/Fly)
+    async with websockets.serve(proxy_handler, "0.0.0.0", LOCAL_PORT, process_request=process_request):
+        print(f"Server started on port {LOCAL_PORT}")
         await asyncio.Future()  # Run forever
 
 if __name__ == "__main__":

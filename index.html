@@ -377,7 +377,12 @@
             updateStatus(false, "Connecting to Boat ID Server...");
 
             // Try Render first, then Localhost
+            // In Docker/Fly, we serve this file from the same server, so we connect to window.location.host
+            let wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            let currentHost = window.location.host;
+
             const WS_URLS = [
+                `${wsProtocol}//${currentHost}`, // Self (Preferred for Fly.io/Docker)
                 "wss://boat-id.onrender.com",
                 "ws://localhost:8765"
             ];
