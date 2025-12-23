@@ -81,11 +81,23 @@ async def proxy_handler(client_ws):
     finally:
         print(f"[Session] Ended")
 
-async def process_request(server_protocol, path, request_headers):
+async def process_request(connection, request):
     """
     Handle HTTP requests. Serve index.html on root.
     Everything else upgrades to WebSocket.
     """
+    path = request.path
+    request_headers = request.headers
+
+    # If it's a specific path for health or other assets, handle it
+    if path == "/health":
+         return http.HTTPStatus.OK, [], b"OK"
+
+    # Check if this is a WebSocket upgrade request (Upgrade: websocket)
+    # If so, return None to let websockets handle the connection
+    if "Upgrade" in request_headers and request_headers["Upgrade"].lower() == "websocket":
+        return None
+
     if path == "/":
         try:
             with open("index.html", "rb") as f:
@@ -94,10 +106,6 @@ async def process_request(server_protocol, path, request_headers):
         except FileNotFoundError:
             return http.HTTPStatus.NOT_FOUND, [], b"index.html not found"
             
-    # For health checks (Fly.io checks / usually, but sometimes just TCP)
-    if path == "/health":
-         return http.HTTPStatus.OK, [], b"OK"
-         
     # Return None to let websockets handle the connection (Upgrade)
     return None
 
